@@ -1,0 +1,36 @@
+{
+  "name": "pdf-editor",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "oxlint",
+    "preview": "vite preview",
+    "verify": "vite build --config vite.verify.config.ts && node node_modules/.verify/verify.js",
+    "samples": "node scripts/make-samples.mjs",
+    "selftest": "node scripts/selftest-runner.mjs",
+    "uitest": "node scripts/uitest.mjs",
+    "test": "npm run verify && npm run uitest && npm run formtest && npm run ghosttest",
+    "formtest": "node scripts/formtest.mjs",
+    "ghosttest": "node scripts/ghosttest.mjs"
+  },
+  "dependencies": {
+    "@pdf-lib/fontkit": "^1.1.1",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.2.108",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.4",
+    "oxlint": "^1.75.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.2.0"
+  }
+}
