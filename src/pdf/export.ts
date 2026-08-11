@@ -5,6 +5,8 @@ import {
   PDFDocument,
   PDFDropdown,
   PDFFont,
+  PDFArray,
+  PDFName,
   PDFOptionList,
   PDFPage,
   PDFRadioGroup,
@@ -91,15 +93,66 @@ export async function exportPdf(
     await drawAnno(pdfDoc, page, info, anno, fonts)
   }
 
-  if (options.flattenForm) {
-    try {
-      pdfDoc.getForm().flatten()
-    } catch {
-      // A malformed AcroForm should not cost the user their annotations.
+  if (options.flattenForm) flattenForm(pdfDoc)
+
+  return pdfDoc.save()
+}
+
+/**
+ * Flatten the form, tolerating widgets that are not attached to any page.
+ *
+ * pdf-lib resolves each widget's page and throws on the first one it cannot
+ * place, abandoning the entire form — so a single orphaned annotation, which
+ * real forms do carry, silently leaves every field interactive. Drop those
+ * orphans first so the rest can flatten.
+ */
+function flattenForm(pdfDoc: PDFDocument) {
+  let form
+  try {
+    form = pdfDoc.getForm()
+  } catch {
+    return
+  }
+
+  const onPage = new Set<string>()
+  for (const page of pdfDoc.getPages()) {
+    const annots = page.node.Annots()
+    if (!annots) continue
+    for (let i = 0; i < annots.size(); i++) onPage.add(annots.get(i).toString())
+  }
+
+  const context = pdfDoc.context
+  const orphanFields = new Set<string>()
+
+  for (const field of form.getFields()) {
+    const kids = field.acroField.dict.lookupMaybe(PDFName.of('Kids'), PDFArray)
+    if (kids) {
+      // Walk backwards: removing shifts the indices of everything after.
+      for (let i = kids.size() - 1; i >= 0; i--) {
+        if (!onPage.has(kids.get(i).toString())) kids.remove(i)
+      }
+      continue
+    }
+    // A merged field is its own widget, so an unattached one has to go
+    // entirely rather than losing a kid.
+    const ref = context.getObjectRef(field.acroField.dict)
+    if (ref && !onPage.has(ref.toString())) orphanFields.add(ref.toString())
+  }
+
+  if (orphanFields.size > 0) {
+    const fields = form.acroForm.dict.lookupMaybe(PDFName.of('Fields'), PDFArray)
+    if (fields) {
+      for (let i = fields.size() - 1; i >= 0; i--) {
+        if (orphanFields.has(fields.get(i).toString())) fields.remove(i)
+      }
     }
   }
 
-  return pdfDoc.save()
+  try {
+    form.flatten()
+  } catch {
+    // Nothing more we can do; the export still carries the field values.
+  }
 }
 
 function applyFormValues(

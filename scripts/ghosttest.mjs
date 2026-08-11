@@ -106,6 +106,26 @@ try {
     `${choices.radioOn} on; value=${JSON.stringify(choices.values['applicant.tier'])}; exportValues=${JSON.stringify(choices.exportValues)}`,
   )
 
+  // Flattening must actually remove the fields, and must survive widgets that
+  // are not attached to any page.
+  const flat = await page.eval(`
+    const st = window.__store.getState()
+    const { exportPdf } = await import('/src/pdf/export.ts')
+    const bytes = await exportPdf(st.doc.bytes, st.pages, st.annos, st.formValues,
+      st.doc.initialFormValues, { flattenForm: true }, st.fieldStyles)
+    let s = ''
+    for (const b of bytes) s += String.fromCharCode(b)
+    return btoa(s)
+  `)
+  const flatDoc = await PDFDocument.load(Buffer.from(flat, 'base64'), { ignoreEncryption: true })
+  let remaining = 0
+  try {
+    remaining = flatDoc.getForm().getFields().length
+  } catch {
+    remaining = 0
+  }
+  check('flatten removes every interactive field', remaining === 0, `${remaining} left`)
+
   const { data } = await page.send('Page.captureScreenshot', { format: 'png' })
   writeFileSync(`${OUT_DIR}/shot-ghost.png`, Buffer.from(data, 'base64'))
 

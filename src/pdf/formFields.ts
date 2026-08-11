@@ -1,12 +1,15 @@
 import {
   PDFCheckBox,
+  PDFDict,
   PDFDocument,
   PDFDropdown,
+  PDFHexString,
+  PDFName,
   PDFOptionList,
   PDFRadioGroup,
+  PDFString,
   PDFTextField,
-  type PDFPage,
-  type PDFWidgetAnnotation,
+  PDFWidgetAnnotation,
 } from 'pdf-lib'
 import type { FieldKind, FormField, FormWidget, PageInfo } from '../types'
 import { mapRect, type Matrix } from './coords'
@@ -26,7 +29,7 @@ export function readFormFields(
     return []
   }
 
-  const pageOfDict = buildWidgetPageIndex(pdfDoc.getPages())
+  const widgetsByName = collectPageWidgets(pdfDoc)
   const fields: FormField[] = []
 
   for (const field of form.getFields()) {
@@ -41,8 +44,7 @@ export function readFormFields(
         : undefined
 
     const widgets: FormWidget[] = []
-    for (const widget of field.acroField.getWidgets()) {
-      const pageIndex = pageOfDict.get(widget.dict) ?? 0
+    for (const { pageIndex, widget } of widgetsByName.get(field.getName()) ?? []) {
       const page = pages[pageIndex]
       if (!page) continue
 
@@ -183,18 +185,54 @@ function kindOf(field: unknown): FieldKind | null {
 }
 
 /**
- * A widget annotation does not reliably carry a /P back-reference, so walk the
- * pages' /Annots arrays instead and index by the resolved dictionary.
+ * Collect widgets from the *pages*, keyed by fully-qualified field name.
+ *
+ * Widgets cannot be matched to pages through the AcroForm object graph: some
+ * documents carry two parallel sets of objects, where /Fields and a page's
+ * /Annots describe the same field with different indirect references, and
+ * neither /P nor object identity links them. Viewers draw what is in /Annots,
+ * so that is what we enumerate; the AcroForm is consulted only for a field's
+ * type, options and value.
  */
-function buildWidgetPageIndex(pdfPages: PDFPage[]): Map<unknown, number> {
-  const map = new Map<unknown, number>()
-  pdfPages.forEach((page, i) => {
+function collectPageWidgets(
+  pdfDoc: PDFDocument,
+): Map<string, { pageIndex: number; widget: PDFWidgetAnnotation }[]> {
+  const byName = new Map<string, { pageIndex: number; widget: PDFWidgetAnnotation }[]>()
+
+  pdfDoc.getPages().forEach((page, pageIndex) => {
     const annots = page.node.Annots()
     if (!annots) return
-    for (let j = 0; j < annots.size(); j++) {
-      const dict = page.doc.context.lookup(annots.get(j))
-      if (dict) map.set(dict, i)
+
+    for (let i = 0; i < annots.size(); i++) {
+      const dict = page.doc.context.lookupMaybe(annots.get(i), PDFDict)
+      if (!dict) continue
+      if (dict.get(PDFName.of('Subtype')) !== PDFName.of('Widget')) continue
+
+      const name = qualifiedName(dict)
+      if (!name) continue
+
+      const entry = { pageIndex, widget: PDFWidgetAnnotation.fromDict(dict) }
+      const list = byName.get(name)
+      if (list) list.push(entry)
+      else byName.set(name, [entry])
     }
   })
-  return map
+
+  return byName
 }
+
+/** Field names are built from the /T entries up the /Parent chain. */
+function qualifiedName(dict: PDFDict): string | null {
+  const parts: string[] = []
+  let current: PDFDict | undefined = dict
+
+  for (let depth = 0; current && depth < 16; depth++) {
+    const t = current.lookupMaybe(PDFName.of('T'), PDFString, PDFHexString)
+    if (t) parts.unshift(t.decodeText())
+    current = current.lookupMaybe(PDFName.of('Parent'), PDFDict)
+  }
+
+  return parts.length ? parts.join('.') : null
+}
+
+
