@@ -57,6 +57,12 @@ re-encode), applies form values and field styles, then draws annotations.
   and the UI says so.
 - Standard fonts are WinAnsi-encoded; `pdf/text.ts` folds what it can and drops
   the rest. Newlines must survive sanitising — they are structural.
+- **Form values must be cleaned before `setText`** (`toWinAnsi`). Their
+  appearance streams are generated inside `save()`, so one unencodable character
+  fails the *entire* export rather than that one field — and the per-field
+  try/catch cannot help, because the throw happens later. Invisible bidi and
+  zero-width marks (U+202D and friends) ride along with pasted phone numbers and
+  are stripped, not substituted.
 - Multiline form fields often carry a default appearance sized to the whole box
   (or size 0 auto-fit), which renders one giant clipped line. `fixAutoFontSize`
   caps it, but only when no explicit user style exists.

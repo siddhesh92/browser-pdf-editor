@@ -237,6 +237,44 @@ async function main() {
     check('unsupported glyphs are folded, not fatal', ok)
   }
 
+  // 7. Pasted text carries invisible bidi and zero-width marks; one of those in
+  //    a form value used to fail the entire export at save() time.
+  {
+    const bytes = new Uint8Array(readFileSync(`${OUT}/form.pdf`))
+    const pages = await pagesOf(bytes)
+    const nasty =
+      '\u202D+34 932 95 28 00\u202C' + '\u200B' + '\uFEFF' + ' \u2066rtl\u2069'
+    const values = {
+      'applicant.name': nasty,
+      'applicant.email': 'caf\u00e9 \u2014 na\u00efve \u201cquoted\u201d',
+      'applicant.notes': 'CJK \u65e5\u672c\u8a9e and emoji \u{1F600}',
+    }
+    let ok = true
+    let message = ''
+    let out = new Uint8Array()
+    try {
+      out = await exportPdf(bytes, pages, [], values, {})
+    } catch (e) {
+      ok = false
+      message = e instanceof Error ? e.message : String(e)
+    }
+    check('invisible/bidi characters do not fail the export', ok, message)
+
+    if (ok) {
+      const form = (await PDFDocument.load(out)).getForm()
+      const name = (form.getField('applicant.name') as PDFTextField).getText() ?? ''
+      check(
+        'invisible marks are removed, not substituted',
+        name === '+34 932 95 28 00 rtl',
+        JSON.stringify(name),
+      )
+      const email = (form.getField('applicant.email') as PDFTextField).getText() ?? ''
+      check('accented and typographic characters survive', email.includes('café'), email)
+      const notes = (form.getField('applicant.notes') as PDFTextField).getText() ?? ''
+      check('unencodable scripts degrade to placeholders', notes.startsWith('CJK ?'), notes)
+    }
+  }
+
   console.log(results.join('\n'))
   console.log(failures ? `\n${failures} failure(s)` : '\nAll checks passed')
   process.exit(failures ? 1 : 0)

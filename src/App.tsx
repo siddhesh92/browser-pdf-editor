@@ -10,7 +10,7 @@ import type { ToolId } from './types'
 import './App.css'
 
 /** Bumped whenever behaviour changes, so a stale tab is identifiable on sight. */
-const APP_REV = 'rev 10'
+const APP_REV = 'rev 11'
 
 const SHORTCUTS: Record<string, ToolId> = {
   v: 'select',

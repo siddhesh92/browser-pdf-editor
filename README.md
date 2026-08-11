@@ -161,6 +161,10 @@ Things that cost real time here, in case they save you some:
   is an index into a list of labels while the field reports the label itself.
 - **Form widgets can be under 5 px on screen.** Any border or fill you add reads
   as a tick at that size.
+- **Pasted text carries invisible passengers.** Bidi overrides and zero-width
+  marks (U+202D and friends) come along with copied phone numbers. In a form
+  value they fail the whole export from inside `save()`, long after the code
+  that set them — so clean on the way in, and strip rather than substitute.
 - **A hot-replaced zustand store becomes two stores.** Components re-rendered by
   Fast Refresh bind to the new one and the rest keep the old, so the UI silently
   half-works. `import.meta.hot.invalidate()` forces a full reload instead.

@@ -15,7 +15,7 @@ import {
 } from 'pdf-lib'
 import type { Anno, FieldStyle, FontFamily, PageInfo, RGB, Rect } from '../types'
 import { placeOnPage, type Matrix } from './coords'
-import { sanitize, wrapText } from './text'
+import { sanitize, toWinAnsi, wrapText } from './text'
 
 const PAD = 2
 const LINE_HEIGHT = 1.18
@@ -137,7 +137,11 @@ function applyFormValues(
 
     try {
       if (field instanceof PDFTextField) {
-        field.setText(value)
+        // Appearance streams are generated inside save(), far from here, so an
+        // unencodable character would fail the whole export rather than this
+        // one field. Clean it before it gets that far.
+        const clean = toWinAnsi(value)
+        field.setText(field.isMultiline() ? clean : clean.replace(/[\r\n]+/g, ' '))
         if (!styled.has(name)) fixAutoFontSize(field)
       }
       else if (field instanceof PDFCheckBox) {
